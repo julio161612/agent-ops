@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Acme Corp — sitio de prueba del widget de Agent Ops</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body>
+  <h1>Acme Corp</h1>
+  <p>Esta es una página de ejemplo de un cliente del tenant, para probar el widget embebido.</p>
+  <p>
+    El widget se instala pegando este snippet antes de <code>&lt;/body&gt;</code>:
+  </p>
+  <pre>&lt;script src="http://localhost:8000/widget.js"
+        data-api-key="ao_pk_TU_CLAVE_DE_WIDGET"
+        data-api-url="http://localhost:8000"&gt;&lt;/script&gt;</pre>
+
+  <p>
+    Esta página en concreto lee la clave de la URL (<code>?key=ao_pk_...</code>) para no tener
+    que editar el archivo a mano durante la verificación — en un sitio real, el snippet de
+    arriba se pega tal cual, con la clave ya fija en el <code>data-api-key</code>.
+  </p>
+
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var key = params.get("key");
+      var apiUrl = params.get("apiUrl") || "http://localhost:8000";
+      if (!key) {
+        document.write(
+          "<p style='color:red'>Falta ?key=ao_pk_... en la URL de esta página de demo.</p>"
+        );
+        return;
+      }
+      var script = document.createElement("script");
+      script.src = apiUrl + "/widget.js";
+      script.setAttribute("data-api-key", key);
+      script.setAttribute("data-api-url", apiUrl);
+      script.setAttribute("data-title", "Acme Corp — Soporte");
+      document.body.appendChild(script);
+    })();
+  </script>
+</body>
+</html>

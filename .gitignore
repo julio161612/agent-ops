@@ -1,0 +1,52 @@
+# Python (backend)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+.venv/
+venv/
+env/
+
+# Testing / tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node (frontend)
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+coverage/
+
+# Environment / secrets — never commit a real .env, only .env.example
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Eval reports (generated locally, not source)
+backend/eval/reports/*
+!backend/eval/reports/.gitkeep
+
+# Throwaway verification/debug scripts — these should live in a scratch
+# directory outside the repo, never committed; ignored here as a safety net
+# in case one is ever created inside the project by mistake.
+verify_*.py
+debug_*.py
+scratch_*.py
+*.scratch.*
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db

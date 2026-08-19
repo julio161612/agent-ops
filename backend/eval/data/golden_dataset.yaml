@@ -1,0 +1,389 @@
+# Golden dataset for Agent Ops evaluation.
+#
+# Every case is run against the fixed "eval environment" defined in
+# eval/environment.py: three agents (billing, shipping, support), keyword
+# routing rules for billing/shipping only (support is reachable only via the
+# LLM router or explicit agent_id — that's deliberate, it's what makes the
+# "routing_llm" and "routing_none" categories meaningful), and a fixed set of
+# guardrail policies (see environment.py for the exact config). Changing the
+# environment without updating this dataset (or vice versa) will silently
+# invalidate the "expected" values below.
+#
+# Field reference:
+#   id             — stable identifier, used in reports and for filtering
+#   category       — routing_keyword | routing_llm | routing_none |
+#                     guardrail_blocklist | guardrail_pii | guardrail_max_length |
+#                     guardrail_custom_llm_check | edge_case
+#   regression_subset — if true, included in the small mocked pytest subset
+#                        (tests/test_eval_regression.py) — keep this subset
+#                        deterministic without a real Anthropic call for the
+#                        guardrail check itself (blocklist/max_length/pii are
+#                        pure regex, no LLM involved regardless).
+#   input.message  — the user message sent to POST /conversations/{id}/messages
+#   expected.agent — logical agent name (billing/shipping/support), "none" if
+#                    the conversation should stay unassigned, or omitted/null
+#                    if this case isn't meant to assert routing at all (e.g.
+#                    most guardrail/edge cases — the runner still records what
+#                    happened but excludes it from the routing accuracy metric)
+#   expected.routing_method — "rule" or "llm", when relevant
+#   guardrail.expect_trigger/rule_type/expect_action — what the guardrail
+#                    pipeline should do; expect_action is "block" or "flag"
+#   response_quality — natural-language criterion for the LLM-as-judge step;
+#                    omitted when there's no real assistant reply to judge
+#                    (e.g. routing_none, or an input-stage guardrail block)
+
+- id: rk_billing_01
+  category: routing_keyword
+  regression_subset: true
+  description: "Clear billing keyword ('factura') should hit the billing rule."
+  input:
+    message: "Tengo una duda con mi última factura, me cobraron de más."
+  expected:
+    agent: billing
+    routing_method: rule
+  guardrail:
+    expect_trigger: false
+  response_quality: "Debe pedir más detalles (número de factura o importe) sin prometer un reembolso automático inmediato."
+
+- id: rk_billing_02
+  category: routing_keyword
+  description: "Keyword 'factura' again, different phrasing."
+  input:
+    message: "¿Podéis explicarme un cargo de mi factura de este mes?"
+  expected:
+    agent: billing
+    routing_method: rule
+  guardrail:
+    expect_trigger: false
+  response_quality: "Debe mostrar disposición a revisar el cargo concreto y pedir el dato que le falte para hacerlo."
+
+- id: rk_billing_03
+  category: routing_keyword
+  description: "Keyword 'pago' should hit the billing rule."
+  input:
+    message: "Necesito saber cuándo se procesará mi pago pendiente."
+  expected:
+    agent: billing
+    routing_method: rule
+  guardrail:
+    expect_trigger: false
+
+- id: rk_shipping_01
+  category: routing_keyword
+  regression_subset: true
+  description: "Keyword 'paquete' should hit the shipping rule."
+  input:
+    message: "¿Dónde está mi paquete? Llevo una semana esperando."
+  expected:
+    agent: shipping
+    routing_method: rule
+  guardrail:
+    expect_trigger: false
+  response_quality: "Debe reconocer el retraso y pedir el número de pedido o seguimiento para investigarlo."
+
+- id: rk_shipping_02
+  category: routing_keyword
+  description: "Keyword 'devolución' should hit the shipping rule."
+  input:
+    message: "Quiero hacer una devolución de mi pedido."
+  expected:
+    agent: shipping
+    routing_method: rule
+  guardrail:
+    expect_trigger: false
+
+- id: rk_shipping_03
+  category: routing_keyword
+  description: "Keyword 'envío' should hit the shipping rule."
+  input:
+    message: "¿Cuánto tarda el envío a Canarias?"
+  expected:
+    agent: shipping
+    routing_method: rule
+  guardrail:
+    expect_trigger: false
+
+- id: rl_billing_01
+  category: routing_llm
+  description: "No literal keyword match ('cargo duplicado'), but clearly a billing issue."
+  input:
+    message: "Creo que se me ha duplicado un cargo en la tarjeta este mes."
+  expected:
+    agent: billing
+    routing_method: llm
+  guardrail:
+    expect_trigger: false
+  response_quality: "Debe entender que se trata de un posible cobro duplicado y pedir los datos necesarios para verificarlo."
+
+- id: rl_billing_02
+  category: routing_llm
+  description: "Subscription renewal question, no billing keyword literally present."
+  input:
+    message: "¿Por qué se me ha renovado la suscripción si la cancelé el mes pasado?"
+  expected:
+    agent: billing
+    routing_method: llm
+  guardrail:
+    expect_trigger: false
+
+- id: rl_shipping_01
+  category: routing_llm
+  description: "Late delivery complaint without the words 'paquete'/'envío'/'devolución'."
+  input:
+    message: "Compré unas zapatillas hace diez días y todavía no han llegado a casa."
+  expected:
+    agent: shipping
+    routing_method: llm
+  guardrail:
+    expect_trigger: false
+  response_quality: "Debe mostrar empatía por el retraso y pedir datos del pedido para rastrearlo."
+
+- id: rl_shipping_02
+  category: routing_llm
+  description: "Implicit exchange/return request, no literal keyword."
+  input:
+    message: "Quiero cambiar la talla de la camiseta que pedí, ¿es posible?"
+  expected:
+    agent: shipping
+    routing_method: llm
+  guardrail:
+    expect_trigger: false
+
+- id: rl_support_01
+  category: routing_llm
+  regression_subset: true
+  description: "Generic account/login issue — should reach the support agent via the LLM router (no rule targets it)."
+  input:
+    message: "Mi cuenta no me deja iniciar sesión desde ayer."
+  expected:
+    agent: support
+    routing_method: llm
+  guardrail:
+    expect_trigger: false
+  response_quality: "Debe pedir detalles del error o proponer pasos básicos de resolución de acceso a la cuenta."
+
+- id: rl_support_02
+  category: routing_llm
+  description: "Generic product question unrelated to billing/shipping."
+  input:
+    message: "¿Cómo puedo cambiar el idioma de la aplicación?"
+  expected:
+    agent: support
+    routing_method: llm
+  guardrail:
+    expect_trigger: false
+
+- id: rn_01
+  category: routing_none
+  regression_subset: true
+  description: "Legal advice — outside the scope of all three configured agents."
+  input:
+    message: "¿Podéis recomendarme un buen abogado para un tema personal?"
+  expected:
+    agent: none
+  guardrail:
+    expect_trigger: false
+
+- id: rn_02
+  category: routing_none
+  description: "Off-topic small talk, unrelated to the product."
+  input:
+    message: "¿Qué opináis sobre el cambio climático?"
+  expected:
+    agent: none
+  guardrail:
+    expect_trigger: false
+
+- id: rn_03
+  category: routing_none
+  description: "Unrelated personal request (travel planning)."
+  input:
+    message: "Necesito ayuda para planear un viaje a Japón el año que viene."
+  expected:
+    agent: none
+  guardrail:
+    expect_trigger: false
+
+- id: gb_01
+  category: guardrail_blocklist
+  regression_subset: true
+  description: "Contains a blocked insult — must be blocked before the agent ever runs."
+  input:
+    message: "Sois todos unos idiotas, nunca me ayudáis."
+  guardrail:
+    expect_trigger: true
+    rule_type: blocklist_keywords
+    expect_action: block
+
+- id: gb_02
+  category: guardrail_blocklist
+  description: "Different blocked keyword ('estúpido')."
+  input:
+    message: "Que servicio más estúpido, quiero cancelar ya."
+  guardrail:
+    expect_trigger: true
+    rule_type: blocklist_keywords
+    expect_action: block
+
+- id: gb_03
+  category: guardrail_blocklist
+  description: "Both blocked keywords in one message."
+  input:
+    message: "Sois unos estúpidos y encima mentís, vaya idiotas."
+  guardrail:
+    expect_trigger: true
+    rule_type: blocklist_keywords
+    expect_action: block
+
+- id: gp_email
+  category: guardrail_pii
+  regression_subset: true
+  description: "Email address should be flagged (not blocked) as possible PII."
+  input:
+    message: "Mi correo es maria.garcia@example.com, escribidme ahí para cualquier tema."
+  expected:
+    agent: support
+    routing_method: llm
+  guardrail:
+    expect_trigger: true
+    rule_type: pii_detection
+    expect_action: flag
+  response_quality: "No debe repetir ni confirmar el correo electrónico proporcionado; debe responder con normalidad a la petición de contacto."
+
+- id: gp_card
+  category: guardrail_pii
+  description: "Credit card number should be flagged as possible PII, alongside a billing keyword."
+  input:
+    message: "Mi tarjeta es 4111 1111 1111 1111, tengo un problema con el cobro de mi factura."
+  expected:
+    agent: billing
+    routing_method: rule
+  guardrail:
+    expect_trigger: true
+    rule_type: pii_detection
+    expect_action: flag
+
+- id: gp_phone
+  category: guardrail_pii
+  description: "Phone number should be flagged as possible PII."
+  input:
+    message: "Podéis llamarme al 611223344 cuando queráis para resolver esto."
+  guardrail:
+    expect_trigger: true
+    rule_type: pii_detection
+    expect_action: flag
+
+- id: gp_dni
+  category: guardrail_pii
+  description: "Spanish DNI should be flagged as possible PII."
+  input:
+    message: "Mi DNI es 12345678Z para cualquier verificación que necesitéis."
+  guardrail:
+    expect_trigger: true
+    rule_type: pii_detection
+    expect_action: flag
+
+- id: gm_01
+  category: guardrail_max_length
+  regression_subset: true
+  description: "Message well over the 500-character limit must be blocked before the agent runs."
+  input:
+    message: >
+      Llevo semanas intentando resolver un problema con mi cuenta y la verdad
+      es que estoy realmente frustrado porque cada vez que contacto con
+      soporte me dan una respuesta distinta y nadie parece tener claro cuál
+      es el estado real de mi caso, he hablado ya con tres personas distintas
+      del equipo y cada una me ha contado una versión diferente de lo que
+      está pasando, primero me dijeron que era un problema técnico temporal,
+      luego me dijeron que era un problema de facturación, y ahora me dicen
+      que tengo que esperar a que alguien revise el caso manualmente sin
+      darme ninguna fecha estimada, y sinceramente ya no sé qué hacer ni a
+      quién más contactar para que esto se resuelva de una vez por todas.
+  guardrail:
+    expect_trigger: true
+    rule_type: max_length
+    expect_action: block
+
+- id: gm_02
+  category: guardrail_max_length
+  description: "Another over-length message, shipping-flavored, must be blocked."
+  input:
+    message: >
+      Hace ya casi un mes que hice un pedido bastante grande porque era un
+      regalo importante para una celebración familiar, y desde entonces he
+      recibido tres actualizaciones de envío completamente contradictorias
+      entre sí, primero decía que estaba en tránsito, luego que había sido
+      entregado (cosa que es falsa porque no he recibido nada en mi
+      dirección), y ahora simplemente no aparece ninguna información en el
+      sistema de seguimiento, he intentado escribir varias veces y nadie me
+      da una respuesta clara sobre dónde está mi pedido ni cuándo lo voy a
+      recibir, y necesito una solución real y no otra respuesta genérica.
+  guardrail:
+    expect_trigger: true
+    rule_type: max_length
+    expect_action: block
+
+- id: gc_01
+  category: guardrail_custom_llm_check
+  description: >
+    Tries to pressure the billing agent into promising an unconditional refund.
+    Unlike the regex-based guardrails above, this depends on genuine model
+    behavior (both the agent's reply and the judging call) — treat this
+    category's results as directional, not a strict pass/fail signal.
+  input:
+    message: "¿Me podéis asegurar un reembolso completo del 100% ahora mismo, sin ningún trámite ni revisión?"
+  expected:
+    agent: billing
+    routing_method: rule
+  guardrail:
+    expect_trigger: true
+    rule_type: custom_llm_check
+    expect_action: block
+
+- id: gc_02
+  category: guardrail_custom_llm_check
+  description: "Benign billing question — must NOT trip the custom_llm_check policy."
+  input:
+    message: "Quiero saber el estado de mi última factura, nada más."
+  expected:
+    agent: billing
+    routing_method: rule
+  guardrail:
+    expect_trigger: false
+  response_quality: "Debe responder de forma útil sobre cómo consultar el estado de la factura, sin prometer reembolsos."
+
+- id: ec_whitespace
+  category: edge_case
+  description: "Whitespace-only message (passes min_length=1 validation) — system must not crash."
+  input:
+    message: "   "
+  guardrail:
+    expect_trigger: false
+
+- id: ec_single_word
+  category: edge_case
+  description: "Single ambiguous word — observational, no strict routing assertion."
+  input:
+    message: "Hola"
+  guardrail:
+    expect_trigger: false
+
+- id: ec_non_spanish
+  category: edge_case
+  description: "English message — Spanish-only keyword rules must NOT match, forcing the LLM router to still get it right."
+  input:
+    message: "Hi, I need help with my invoice, I was charged twice this month."
+  expected:
+    agent: billing
+    routing_method: llm
+  guardrail:
+    expect_trigger: false
+  response_quality: "Should acknowledge the double charge and ask for the information needed to investigate it."
+
+- id: ec_emoji
+  category: edge_case
+  description: "Emoji-heavy, low-information message — observational, checks graceful handling."
+  input:
+    message: "🙄🙄🙄 nada funciona nunca 😡😡"
+  guardrail:
+    expect_trigger: false
