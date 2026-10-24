@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.api.routers.agent_templates import router as agent_templates_router
 from app.api.routers.agents import router as agents_router
@@ -23,6 +24,8 @@ from app.api.routers.traces import router as traces_router
 from app.api.routers.users import router as users_router
 from app.api.routers.widget import router as widget_router
 from app.core.config import settings
+from app.core.database import engine
+from app.core.redis import get_redis
 
 app = FastAPI(title=settings.PROJECT_NAME, openapi_url=f"{settings.API_V1_PREFIX}/openapi.json")
 
@@ -59,4 +62,13 @@ app.include_router(billing_router, prefix=settings.API_V1_PREFIX)
 
 @app.get("/health", tags=["health"])
 async def health() -> dict[str, str]:
+    """Liveness plus dependency check: 503 if Postgres or Redis is unreachable."""
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        await get_redis().ping()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="dependency unavailable"
+        ) from exc
     return {"status": "ok"}
