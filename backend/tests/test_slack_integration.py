@@ -59,7 +59,7 @@ async def test_configure_slack_webhook_masks_url_on_read(client: AsyncClient) ->
     assert configure.status_code == 200, configure.text
     assert configure.json()["configured"] is True
     assert _WEBHOOK_URL not in configure.text
-    assert configure.json()["masked_webhook_url"].startswith("https://hooks.slack.com/")
+    assert configure.json()["masked_webhook_url"].startswith("https://hooks.slack.example.com/")
 
     read = await client.get(
         "/api/v1/integrations/slack", headers=auth_headers(tokens["access_token"])

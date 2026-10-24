@@ -1,0 +1,9 @@
+# Force LF for files executed inside Linux containers, regardless of the
+# Windows checkout settings (CRLF breaks `#!/bin/sh\r` and `set -e\r`).
+* text=auto eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary
+*.ico binary
