@@ -16,12 +16,14 @@ COPY eval ./eval
 COPY scripts ./scripts
 COPY alembic ./alembic
 COPY alembic.ini ./
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-RUN pip install .
+RUN pip install . && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=10 \
     CMD curl -f http://localhost:8000/health || exit 1
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
