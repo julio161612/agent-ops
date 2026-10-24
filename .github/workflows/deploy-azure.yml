@@ -1,0 +1,119 @@
+name: Deploy to Azure
+
+# Manual deployment: build and push both images to ACR, run the migrations job,
+# then roll the Container Apps to the new images.
+#
+# NOT USABLE YET: it needs the Azure account, the Terraform-created resources
+# and the repository variables below. Everything marked TODO(azure) is a value
+# to fill in once they exist.
+
+on:
+  workflow_dispatch:
+    inputs:
+      github_environment:
+        description: GitHub Environment to deploy (holds its own variables / approvals)
+        type: string
+        default: dev
+
+permissions:
+  id-token: write # OIDC token for azure/login (no stored client secret)
+  contents: read
+
+concurrency:
+  group: deploy-azure-${{ inputs.github_environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
+    env:
+      # TODO(azure): create these as variables (Settings > Secrets and variables
+      # > Actions > Variables, ideally per GitHub Environment). They are IDs and
+      # names, not secrets. Most come from `terraform output` in infra/terraform.
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }} # app registration with a federated credential for this repo
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }} # output resource_group_name
+      ACR_NAME: ${{ vars.ACR_NAME }} # output acr_name
+      BACKEND_APP: ${{ vars.BACKEND_APP }} # output backend_app_name
+      FRONTEND_APP: ${{ vars.FRONTEND_APP }} # output frontend_app_name
+      MIGRATIONS_JOB: ${{ vars.MIGRATIONS_JOB }} # output migrations_job_name
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required variables
+        run: |
+          missing=0
+          for v in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP ACR_NAME BACKEND_APP FRONTEND_APP MIGRATIONS_JOB; do
+            if [ -z "${!v}" ]; then echo "::error::Repository/environment variable $v is not set (TODO(azure))"; missing=1; fi
+          done
+          exit $missing
+
+      # TODO(azure): one-time setup, before this step can work
+      #   1. az ad app create + az ad app federated-credential create with subject
+      #      repo:<owner>/<repo>:environment:<github_environment>
+      #   2. Grant that app: Contributor on the resource group and AcrPush on the registry
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to ACR
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Build and push images
+        run: |
+          server="$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)"
+          echo "ACR_SERVER=$server" >> "$GITHUB_ENV"
+          docker build -t "$server/agentops-backend:$IMAGE_TAG" -t "$server/agentops-backend:latest" ./backend
+          docker build -t "$server/agentops-frontend:$IMAGE_TAG" -t "$server/agentops-frontend:latest" ./frontend
+          docker push --all-tags "$server/agentops-backend"
+          docker push --all-tags "$server/agentops-frontend"
+
+      - name: Run database migrations (Container Apps Job)
+        run: |
+          az containerapp job update \
+            --name "$MIGRATIONS_JOB" --resource-group "$AZURE_RESOURCE_GROUP" \
+            --image "$ACR_SERVER/agentops-backend:$IMAGE_TAG"
+          execution="$(az containerapp job start \
+            --name "$MIGRATIONS_JOB" --resource-group "$AZURE_RESOURCE_GROUP" \
+            --query name -o tsv)"
+          echo "Started migrations execution: $execution"
+          for _ in $(seq 1 60); do
+            status="$(az containerapp job execution show \
+              --name "$MIGRATIONS_JOB" --resource-group "$AZURE_RESOURCE_GROUP" \
+              --job-execution-name "$execution" --query properties.status -o tsv)"
+            echo "status: $status"
+            case "$status" in
+              Succeeded) exit 0 ;;
+              Failed|Stopped|Degraded) echo "::error::Migrations $status"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Migrations did not finish within 10 minutes"; exit 1
+
+      # Only reached when the migrations succeeded; a failed migration leaves
+      # the running revisions untouched.
+      - name: Update backend
+        run: |
+          az containerapp update \
+            --name "$BACKEND_APP" --resource-group "$AZURE_RESOURCE_GROUP" \
+            --image "$ACR_SERVER/agentops-backend:$IMAGE_TAG"
+
+      - name: Update frontend
+        run: |
+          az containerapp update \
+            --name "$FRONTEND_APP" --resource-group "$AZURE_RESOURCE_GROUP" \
+            --image "$ACR_SERVER/agentops-frontend:$IMAGE_TAG"
+
+      - name: Smoke test
+        run: |
+          fqdn="$(az containerapp show --name "$FRONTEND_APP" --resource-group "$AZURE_RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn -o tsv)"
+          curl --fail --silent --show-error --retry 10 --retry-delay 6 --retry-all-errors \
+            "https://$fqdn/api/v1/openapi.json" > /dev/null
+          echo "OK: https://$fqdn"
