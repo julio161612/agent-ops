@@ -34,7 +34,9 @@ services:
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-local-dev-secret-change-me}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      BACKEND_CORS_ORIGINS: '["http://localhost:8080"]'
+      # JSON array. Defaults to the frontend's published port; override with
+      # BACKEND_CORS_ORIGINS in .env (e.g. when serving from another origin).
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-["http://localhost:${FRONTEND_PORT:-8080}"]}
     # ANTHROPIC_API_KEY / JWT_SECRET_KEY / POSTGRES_PASSWORD come from a root
     # .env file (cp .env.example .env) — Docker Compose reads that
     # automatically for ${VAR} substitution above. Never commit that file.
