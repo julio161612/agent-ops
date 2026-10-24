@@ -1,0 +1,27 @@
+# Copy to terraform.tfvars (git-ignored) and fill in the TODOs.
+
+# TODO: fill in once the Azure account exists
+subscription_id = "00000000-0000-0000-0000-000000000000"
+
+project     = "agentops"
+environment = "dev"
+location    = "westeurope"
+
+# First deployment: set to false, apply, push the images, then set to true and
+# apply again (see README).
+deploy_apps = true
+
+# Sizes
+postgres_sku_name    = "B_Standard_B1ms"
+postgres_storage_mb  = 32768
+backend_cpu          = 0.5
+backend_memory       = "1Gi"
+backend_min_replicas = 1
+backend_max_replicas = 3
+
+# Budget alerts (the budget is only created when this list is not empty)
+budget_amount         = 80
+budget_contact_emails = [] # TODO: ["you@example.com"]
+
+# Do NOT put the Anthropic key here; set it with `az keyvault secret set`
+# (see the set_anthropic_key_command output).

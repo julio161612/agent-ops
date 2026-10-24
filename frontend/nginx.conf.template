@@ -1,6 +1,10 @@
 # Serves the built React SPA and reverse-proxies every backend-owned path to
-# the "backend" service (resolved via Docker Compose's internal DNS), so the
-# browser only ever calls this single origin — no CORS configuration needed
+# ${BACKEND_URL} (an nginx image template: the official entrypoint runs envsubst
+# over /etc/nginx/templates/*.template at container start). Defaults to the
+# Docker Compose service; in Azure Container Apps set it to the internal app,
+# e.g. http://agentops-dev-backend. "Host" is sent as the upstream's own host
+# ($proxy_host) because Container Apps routes internal traffic by Host header.
+# The browser only ever calls this single origin — no CORS configuration needed
 # in production, mirroring what the Vite dev-server proxy already does in
 # local development (see ../vite.config.ts).
 
@@ -19,8 +23,8 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://backend:8000;
-        proxy_set_header Host $host;
+        proxy_pass ${BACKEND_URL};
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -30,15 +34,15 @@ server {
     # with an X-API-Key header, not a browser session, so it needs the same
     # single-origin treatment as /api/ for the widget snippet to work as-is.
     location /public/ {
-        proxy_pass http://backend:8000;
-        proxy_set_header Host $host;
+        proxy_pass ${BACKEND_URL};
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     location = /widget.js {
-        proxy_pass http://backend:8000;
+        proxy_pass ${BACKEND_URL};
     }
 
     # Static assets get a long cache lifetime — Vite fingerprints filenames

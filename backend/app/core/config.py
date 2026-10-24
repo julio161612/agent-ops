@@ -34,6 +34,10 @@ class Settings(BaseSettings):
 
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # Only what the admin panel and the widget actually use (see widget.js and
+    # api/deps.py) — not "*".
+    CORS_ALLOW_METHODS: list[str] = ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]
+    CORS_ALLOW_HEADERS: list[str] = ["Authorization", "Content-Type", "X-API-Key"]
 
     # Anthropic — used by AgentExecutionService to run agents for real.
     ANTHROPIC_API_KEY: str = ""

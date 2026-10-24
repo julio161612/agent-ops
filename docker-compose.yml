@@ -34,7 +34,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-local-dev-secret-change-me}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      BACKEND_CORS_ORIGINS: '["http://localhost:8080"]'
+      RUN_MIGRATIONS_ON_START: ${RUN_MIGRATIONS_ON_START:-true}
+      # JSON array. Defaults to the frontend's published port; override with
+      # BACKEND_CORS_ORIGINS in .env (e.g. when serving from another origin).
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-["http://localhost:${FRONTEND_PORT:-8080}"]}
     # ANTHROPIC_API_KEY / JWT_SECRET_KEY / POSTGRES_PASSWORD come from a root
     # .env file (cp .env.example .env) — Docker Compose reads that
     # automatically for ${VAR} substitution above. Never commit that file.
@@ -45,11 +48,25 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # The image's own HEALTHCHECK (curl /health) is what `frontend`'s
-    # `condition: service_healthy` below waits on — migrations run before
-    # uvicorn starts, so "healthy" also means "schema is up to date".
-    command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    # The image entrypoint runs `alembic upgrade head` before uvicorn while
+    # RUN_MIGRATIONS_ON_START is true (the default), so "healthy" still means
+    # "schema is up to date" - the frontend's `condition: service_healthy`
+    # relies on that. Set it to false to migrate separately (`migrate` below).
+
+  # One-off migrations, same image as the backend. Not started by a plain
+  # `docker compose up`; run it with:
+  #   docker compose --profile tools run --rm migrate
+  migrate:
+    build:
+      context: ./backend
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://agentops:${POSTGRES_PASSWORD:-agentops}@postgres:5432/agentops
+      RUN_MIGRATIONS_ON_START: "false"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build:
