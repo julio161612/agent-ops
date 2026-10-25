@@ -24,6 +24,8 @@ server {
 
     location /api/ {
         proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -35,6 +37,8 @@ server {
     # single-origin treatment as /api/ for the widget snippet to work as-is.
     location /public/ {
         proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -43,6 +47,8 @@ server {
 
     location = /widget.js {
         proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
     }
 
     # Static assets get a long cache lifetime — Vite fingerprints filenames
