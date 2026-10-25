@@ -5,3 +5,6 @@ crash.log
 *.tfvars
 !terraform.tfvars.example
 # .terraform.lock.hcl IS committed on purpose (pins provider versions).
+
+tfplan
+*.tfplan
